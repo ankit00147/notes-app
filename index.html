@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Notes App</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; margin: 0; padding: 0; background:#f5f7fb; color:#111; }
+    .container{ max-width:900px; margin:32px auto; padding:20px; background:#fff; box-shadow:0 6px 18px rgba(20,20,50,0.06); border-radius:10px; }
+    h1{ margin:0 0 16px; font-size:24px; }
+    form{ display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+    input[type="text"], textarea { padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box; }
+    textarea { min-height:80px; resize:vertical; }
+    .form-row { flex:1 1 300px; }
+    button { padding:10px 12px; border:none; border-radius:8px; cursor:pointer; background:#2b7cff; color:white; font-weight:600; }
+    .notes { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+    .note { padding:12px; border-radius:8px; background:linear-gradient(180deg,#fff,#fbfdff); box-shadow:0 2px 8px rgba(20,20,50,0.04); }
+    .note h3{ margin:0 0 8px; font-size:16px; }
+    .note p{ margin:0 0 12px; white-space:pre-wrap; color:#333; font-size:14px; }
+    .actions{ display:flex; gap:8px; }
+    .actions button{ background:#eee; color:#111; padding:6px 8px; font-weight:600; border-radius:6px; cursor:pointer; }
+    .actions .delete{ background:#ff6b6b; color:#fff; }
+    .meta{ font-size:12px; color:#666; margin-bottom:8px; }
+    .small { font-size:13px; color:#666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Notes App — Full CRUD</h1>
+
+    <form id="note-form">
+      <div class="form-row">
+        <input id="title" type="text" placeholder="Note title" />
+      </div>
+      <div class="form-row">
+        <textarea id="content" placeholder="Note content (optional)"></textarea>
+      </div>
+      <div style="display:flex;align-items:flex-end;">
+        <button type="submit">Add Note</button>
+      </div>
+    </form>
+
+    <div id="notes" class="notes"></div>
+
+    <p class="small">Tip: Click <strong>Edit</strong> to load note into the form, then click <strong>Update Note</strong>.</p>
+  </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('note-form');
+  const titleInput = document.getElementById('title');
+  const contentInput = document.getElementById('content');
+  const notesEl = document.getElementById('notes');
+
+  async function fetchNotes() {
+    try {
+      const res = await fetch('/api/notes');
+      const notes = await res.json();
+      renderNotes(notes);
+    } catch (err) {
+      console.error('Fetch notes error', err);
+      notesEl.innerHTML = '<p style="grid-column:1/-1">Could not load notes.</p>';
+    }
+  }
+
+  function renderNotes(notes) {
+    if (!Array.isArray(notes) || notes.length === 0) {
+      notesEl.innerHTML = '<p style="grid-column:1/-1">No notes yet. Add one above!</p>';
+      return;
+    }
+    notesEl.innerHTML = notes.map(n => {
+      const created = new Date(n.createdAt).toLocaleString();
+      return `
+        <div class="note" data-id="${n._id}">
+          <div class="meta">${created}</div>
+          <h3>${escapeHtml(n.title)}</h3>
+          <p>${escapeHtml(n.content || '')}</p>
+          <div class="actions">
+            <button class="edit">Edit</button>
+            <button class="delete">Delete</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    // attach handlers
+    notesEl.querySelectorAll('.delete').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const id = e.target.closest('.note').dataset.id;
+        if (!confirm('Delete this note?')) return;
+        await fetch('/api/notes/' + id, { method: 'DELETE' });
+        fetchNotes();
+      });
+    });
+
+    notesEl.querySelectorAll('.edit').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const noteEl = e.target.closest('.note');
+        const id = noteEl.dataset.id;
+        const title = noteEl.querySelector('h3').innerText;
+        const content = noteEl.querySelector('p').innerText;
+        titleInput.value = title;
+        contentInput.value = content;
+        form.dataset.editing = id;
+        form.querySelector('button[type="submit"]').innerText = 'Update Note';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+  }
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const title = titleInput.value.trim();
+    const content = contentInput.value.trim();
+    if (!title) { alert('Title is required'); return; }
+
+    const editingId = form.dataset.editing;
+    if (editingId) {
+      await fetch('/api/notes/' + editingId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content })
+      });
+      delete form.dataset.editing;
+      form.querySelector('button[type="submit"]').innerText = 'Add Note';
+    } else {
+      await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content })
+      });
+    }
+
+    titleInput.value = '';
+    contentInput.value = '';
+    fetchNotes();
+  });
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  fetchNotes();
+});
+</script>
+</body>
+</html>
